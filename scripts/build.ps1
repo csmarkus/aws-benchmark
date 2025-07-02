@@ -13,6 +13,15 @@ if (!(Test-Path $lambdasPath)) {
     New-Item -ItemType Directory -Path $lambdasPath | Out-Null
 }
 
+# --- Check for AWS Lambda Tools ---
+Write-Host "`n🔍 Checking for AWS Lambda Tools CLI..."
+$lambdaToolInstalled = dotnet tool list -g | Select-String "amazon.lambda.tools"
+if (-not $lambdaToolInstalled) {
+    Write-Host "❌ AWS Lambda Tools CLI not found." -ForegroundColor Red
+    Write-Host "👉 Install it with: dotnet tool install -g Amazon.Lambda.Tools"
+    exit 1
+}
+
 # --- Node.js Lambda ---
 $nodePath = Join-Path $lambdasPath "node"
 $nodeZip = Join-Path $lambdasPath "node.zip"
@@ -42,9 +51,14 @@ $dotnetZip = Join-Path $lambdasPath "dotnet.zip"
 Write-Host "`n🛠 Packaging .NET (no AOT) Lambda..."
 Push-Location $dotnetPath
 if (Test-Path $dotnetZip) { Remove-Item $dotnetZip }
-dotnet lambda package -c Release -o $dotnetZip
+
+try {
+    dotnet lambda package -c Release -o $dotnetZip
+    Write-Host "✅ .NET packaged: $dotnetZip"
+} catch {
+    Write-Host "❌ .NET (no AOT) packaging failed. Skipping zip creation." -ForegroundColor Red
+}
 Pop-Location
-Write-Host "✅ .NET packaged: $dotnetZip"
 
 # --- .NET AOT Lambda ---
 Write-Host "`n🐳 Building .NET AOT Lambda via Docker..."
@@ -52,16 +66,19 @@ $dockerfilePath = Join-Path $lambdasPath "dotnet-aot"
 $dotnetAotZip = Join-Path $lambdasPath "dotnet-aot.zip"
 
 Push-Location $dockerfilePath
-docker build -t lambda-aot-builder .
-docker create --name lambda-aot lambda-aot-builder
-if (Test-Path $dotnetAotZip) { Remove-Item $dotnetAotZip }
-docker cp lambda-aot:/publish/lambda-aot.zip $dotnetAotZip
-docker rm lambda-aot
+try {
+    docker build -t lambda-aot-builder .
+    docker create --name lambda-aot lambda-aot-builder | Out-Null
+
+    if (Test-Path $dotnetAotZip) { Remove-Item $dotnetAotZip }
+
+    docker cp lambda-aot:/publish/lambda-aot.zip $dotnetAotZip
+    docker rm lambda-aot | Out-Null
+
+    Write-Host "✅ .NET AOT Docker-built and zipped: $dotnetAotZip"
+} catch {
+    Write-Host "❌ Docker-based .NET AOT packaging failed. Skipping zip creation." -ForegroundColor Red
+}
 Pop-Location
 
-Write-Host "✅ .NET AOT Docker-built and zipped: $dotnetAotZip"
-
-
-
-
-Write-Host "`n🎉 All Lambda packages generated successfully!" -ForegroundColor Green
+Write-Host "`n🎉 All Lambda packages processed!" -ForegroundColor Green
