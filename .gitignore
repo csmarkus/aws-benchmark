@@ -1,0 +1,5 @@
+lambdas/dotnet/bin/*
+lambdas/dotnet-aot/bin/*
+lambdas/dotnet/obj/*
+lambdas/dotnet-aot/obj/*
+*.zip
